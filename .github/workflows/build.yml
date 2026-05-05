@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     # Using an older base (Stretch) to ensure GLIBC compatibility with Debian 10
     container: python:3.10-slim-stretch
 

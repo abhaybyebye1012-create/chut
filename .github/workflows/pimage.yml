@@ -1,0 +1,105 @@
+Skip to content
+abhaybyebye1012-create
+haddhogyi
+Repository navigation
+Code
+Issues
+Pull requests
+Actions
+Projects
+Wiki
+Security and quality
+Insights
+Settings
+Build AutoSubSync AppImage
+Build AutoSubSync AppImage #34
+All jobs
+Run details
+Workflow file for this run
+.github/workflows/build-autosubsync-appimage.yml at eb7f3bd
+name: Build AutoSubSync AppImage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: python:3.10-slim-bullseye
+
+    steps:
+      - name: Install System Dependencies
+        run: |
+          apt-get update
+          apt-get install -y git wget curl build-essential libgl1-mesa-dev libxkbcommon-x11-0 \
+          libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+          libxcb-xinerama0 libxcb-xinput0 libxcb-randr0 libxcb-shape0 binutils musl-tools
+      - name: Clone and Install Source
+        run: |
+          git clone https://github.com/v8952/AutoSubSync.git /build
+          cd /build
+          pip install --no-cache-dir -r requirements.txt
+          pip install --no-cache-dir pyinstaller static-ffmpeg
+      - name: Build static alass
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup target add x86_64-unknown-linux-musl
+          git clone --depth 1 https://github.com/kaegi/alass.git /build/alass-src
+          cd /build/alass-src
+          cargo build --release --target x86_64-unknown-linux-musl
+          mkdir -p /build/src/main/resources/alass-bin
+          FOUND_BIN=$(find target/ -type f -executable -name "alass*" | head -n 1)
+          if [ -n "$FOUND_BIN" ]; then
+            cp "$FOUND_BIN" /build/src/main/resources/alass-bin/alass
+            chmod +x /build/src/main/resources/alass-bin/alass
+          else
+            echo "ERROR: alass binary not found" && exit 1
+          fi
+      - name: Prepare ffmpeg
+        run: |
+          mkdir -p /build/src/main/resources/ffmpeg-bin
+          python3 << 'EOF'
+          import static_ffmpeg, shutil, os, sys
+          static_ffmpeg.add_paths()
+          bin_dir = "/usr/local/lib/python3.10/site-packages/static_ffmpeg/bin/linux"
+          dest = "/build/src/main/resources/ffmpeg-bin"
+          if os.path.exists(os.path.join(bin_dir, "ffmpeg")):
+              shutil.copy2(os.path.join(bin_dir, "ffmpeg"), os.path.join(dest, "ffmpeg"))
+              shutil.copy2(os.path.join(bin_dir, "ffprobe"), os.path.join(dest, "ffprobe"))
+          else:
+              print("FFmpeg not found")
+              sys.exit(1)
+          EOF
+          chmod +x /build/src/main/resources/ffmpeg-bin/*
+      - name: Run PyInstaller
+        run: |
+          cd /build/src
+          pyinstaller --noconfirm --onedir --windowed \
+          --add-data "main/resources:resources" \
+          main/main.py --name AutoSubSync
+      - name: Create AppDir
+        run: |
+          DIST_DIR=$(find /build/src/dist -maxdepth 1 -type d ! -path /build/src/dist | head -1)
+          mkdir -p /build/AppDir
+          cp -a "$DIST_DIR"/. /build/AppDir/
+          printf "[Desktop Entry]\nType=Application\nName=AutoSubSync\nExec=AutoSubSync\nIcon=autosubsync\nCategories=Utility;\n" > /build/AppDir/autosubsync.desktop
+          touch /build/AppDir/autosubsync.png
+          rm -f /build/AppDir/AppRun
+          ln -s AutoSubSync /build/AppDir/AppRun
+      - name: Package AppImage
+        run: |
+          cd /build
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract
+          ARCH=x86_64 ./squashfs-root/AppRun /build/AppDir /build/AutoSubSync-x86_64.AppImage
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSubSync-Linux
+          path: /build/AutoSubSync-x86_64.AppImage

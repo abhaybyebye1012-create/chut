@@ -10,8 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    # Using an older base (Stretch) to ensure GLIBC compatibility with Debian 10
-    container: python:3.10-slim-stretch
+    # Bullseye is the sweet spot for Debian 10 compatibility
+    container: python:3.10-slim-bullseye
 
     steps:
       - name: Install System Dependencies
@@ -37,7 +37,8 @@ jobs:
           cd /build/alass-src
           cargo build --release --target x86_64-unknown-linux-musl
           mkdir -p /build/src/main/resources/alass-bin
-          cp target/x86_64-unknown-linux-musl/release/alass /build/src/main/resources/alass-bin/alass
+          # Locate and copy the musl binary
+          cp $(find target/x86_64-unknown-linux-musl/release/ -name alass -type f | head -n 1) /build/src/main/resources/alass-bin/alass
           chmod +x /build/src/main/resources/alass-bin/alass
 
       - name: Prepare ffmpeg
@@ -68,11 +69,10 @@ jobs:
           mkdir -p /build/AppDir
           cp -a "$DIST_DIR"/. /build/AppDir/
           
-          # Create Desktop file
           printf "[Desktop Entry]\nType=Application\nName=AutoSubSync\nExec=AutoSubSync\nIcon=autosubsync\nCategories=Utility;\n" > /build/AppDir/autosubsync.desktop
           touch /build/AppDir/autosubsync.png
           
-          # Create a bulletproof AppRun script using printf (no hidden characters)
+          # Clean launcher script
           printf '#!/bin/sh\nHERE="$(dirname "$(readlink -f "${0}")")"\nexec "${HERE}/AutoSubSync" "$@"\n' > /build/AppDir/AppRun
           chmod +x /build/AppDir/AppRun
 
@@ -81,7 +81,6 @@ jobs:
           cd /build
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
-          # Force export of ARCH and build
           export ARCH=x86_64
           ./appimagetool --appimage-extract
           ./squashfs-root/AppRun /build/AppDir /build/AutoSubSync-x86_64.AppImage
